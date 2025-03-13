@@ -1,0 +1,238 @@
+---
+title: "CAPM-AMD-Analysis"
+author: "Vinh Tran"
+date: "2024"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(quantmod)
+library(ggplot2)
+library(tidyverse)
+```
+
+# CAPM Analysis
+
+## Introduction
+
+In this assignment, you will explore the foundational concepts of the Capital Asset Pricing Model (CAPM) using historical data for AMD and the S&P 500 index. This exercise is designed to provide a hands-on approach to understanding how these models are used in financial analysis to assess investment risks and returns.
+
+## Background
+
+The CAPM provides a framework to understand the relationship between systematic risk and expected return, especially for stocks. This model is critical for determining the theoretically appropriate required rate of return of an asset, assisting in decisions about adding assets to a diversified portfolio.
+
+## Objectives
+
+1. **Load and Prepare Data:** Import and prepare historical price data for AMD and the S&P 500 to ensure it is ready for detailed analysis.
+2. **CAPM Implementation:** Focus will be placed on applying the CAPM to examine the relationship between AMD's stock performance and the overall market as represented by the S&P 500.
+3. **Beta Estimation and Analysis:** Calculate the beta of AMD, which measures its volatility relative to the market, providing insights into its systematic risk.
+4. **Results Interpretation:** Analyze the outcomes of the CAPM application, discussing the implications of AMD's beta in terms of investment risk and potential returns.
+
+## Instructions
+
+### Step 1: Data Loading
+
+- We are using the `quantmod` package to directly load financial data from Yahoo Finance without the need to manually download and read from a CSV file.
+- `quantmod` stands for "Quantitative Financial Modelling Framework". It was developed to aid the quantitative trader in the development, testing, and deployment of statistically based trading models.
+- Make sure to install the `quantmod` package by running `install.packages("quantmod")` in the R console before proceeding.
+
+```{r load-data}
+# Set start and end dates
+start_date <- as.Date("2019-05-20")
+end_date <- as.Date("2024-05-20")
+
+# Load data for AMD, S&P 500, and the 1-month T-Bill (DTB4WK)
+amd_data <- getSymbols("AMD", src = "yahoo", from = start_date, to = end_date, auto.assign = FALSE)
+gspc_data <- getSymbols("^GSPC", src = "yahoo", from = start_date, to = end_date, auto.assign = FALSE)
+rf_data <- getSymbols("DTB4WK", src = "FRED", from = start_date, to = end_date, auto.assign = FALSE)
+
+# Convert Adjusted Closing Prices and DTB4WK to data frames
+amd_df <- data.frame(Date = index(amd_data), AMD = as.numeric(Cl(amd_data)))
+gspc_df <- data.frame(Date = index(gspc_data), GSPC = as.numeric(Cl(gspc_data)))
+rf_df <- data.frame(Date = index(rf_data), RF = as.numeric(rf_data[,1]))  # Accessing the first column of rf_data
+
+# Merge the AMD, GSPC, and RF data frames on the Date column
+df <- merge(amd_df, gspc_df, by = "Date")
+df <- merge(df, rf_df, by = "Date")
+```
+
+#### Data Processing 
+```{r data}
+colSums(is.na(df))
+# Fill N/A RF data
+df <- df %>%
+  fill(RF, .direction = "down") 
+```
+
+### Step 2: CAPM Analysis
+
+The Capital Asset Pricing Model (CAPM) is a financial model that describes the relationship between systematic risk and expected return for assets, particularly stocks. It is widely used to determine a theoretically appropriate required rate of return of an asset, to make decisions about adding assets to a well-diversified portfolio.
+
+#### The CAPM Formula
+The formula for CAPM is given by:
+
+\[ E(R_i) = R_f + \beta_i (E(R_m) - R_f) \]
+
+Where:
+
+- \( E(R_i) \) is the expected return on the capital asset,
+- \( R_f \) is the risk-free rate,
+- \( \beta_i \) is the beta of the security, which represents the systematic risk of the security,
+- \( E(R_m) \) is the expected return of the market.
+
+
+
+#### CAPM Model Daily Estimation
+
+- **Calculate Returns**: First, we calculate the daily returns for AMD and the S&P 500 from their adjusted closing prices. This should be done by dividing the difference in prices between two consecutive days by the price at the beginning of the period.
+$$
+\text{Daily Return} = \frac{\text{Today's Price} - \text{Previous Trading Day's Price}}{\text{Previous Trading Day's Price}}
+$$
+
+```{r return}
+#fill the code
+df <- df %>%
+  # Creating new columns for the daily returns
+  mutate(
+    # Subtracting the previous day's AMD closing price from the current
+    AMD_Return = (AMD / lag(AMD) - 1),
+    # Subtracting the previous day's GSPC closing price from the current
+    GSPC_Return = (GSPC / lag(GSPC) - 1),
+    # Risk free rate
+    RF_Return = (RF / lag(RF) - 1)
+  )
+```
+
+- **Calculate Risk-Free Rate**: Calculate the daily risk-free rate by conversion of annual risk-free Rate. This conversion accounts for the compounding effect over the days of the year and is calculated using the formula:
+$$
+\text{Daily Risk-Free Rate} = \left(1 + \frac{\text{Annual Rate}}{100}\right)^{\frac{1}{360}} - 1
+$$
+
+```{r riskfree}
+#fill the code
+df <- df %>%
+  # Creating new column
+  mutate(
+    RF_Daily = (1 + RF/100)^(1/360) - 1,) # Using the provided formula
+```
+
+
+- **Calculate Excess Returns**: Compute the excess returns for AMD and the S&P 500 by subtracting the daily risk-free rate from their respective returns.
+
+```{r excess return}
+#fill the code
+df <- df %>%
+  # Creating new columns
+  mutate(
+    # Computing excess returns for AMD and the S&P 500
+    AMD_Excess_Return = AMD_Return - RF_Daily,
+    GSPC_Excess_Return = GSPC_Return - RF_Daily
+  )
+```
+
+
+- **Perform Regression Analysis**: Using linear regression, we estimate the beta (\(\beta\)) of AMD relative to the S&P 500. Here, the dependent variable is the excess return of AMD, and the independent variable is the excess return of the S&P 500. Beta measures the sensitivity of the stock's returns to fluctuations in the market.
+
+```{r lm}
+#fill the code
+capm <- lm(AMD_Excess_Return ~ GSPC_Excess_Return, data = df)
+summary(capm)
+
+# Retrieving the beta value for the beta from the summary
+beta <- coef(capm)[2]
+
+beta_value <- paste("Beta of AMD: ", beta)
+```
+
+
+#### Interpretation
+
+What is your \(\beta\)? Is AMD more volatile or less volatile than the market?
+
+**Answer:**
+Beta value updates with 
+```{r}
+print(beta_value)
+```
+
+The beta value is a measure of stock volatility in this case, AMD compared to
+the overall market, in this case the standard and poors 500 or the top 500 stocks.
+This beta shows how the stock will move in relation to a movement in the rest of the market.
+
+Upon running the code, the beta value generated is represented by the Estimate column
+of the summary for GSPC_Excess_Return, in this case generating a beta value of 1.5699987.
+
+For beta values > 1, the stock is more volatile than the market meaning that a fluctuation
+in the market by a given percentage will generate a greater change in percentage to the stock
+in the same direction as the market. For beta values < 1, the stock is less volatile
+such that a given percentage change in the market in a certain direction will generate
+a smaller percentage change in the stock in the same direction. For beta values equal to 1,
+a change in the market in a direction will generate a change in the stock value by
+the same magnitude.
+
+In the case of AMD and the S&P 500, the beta value of 1.5699987 indicates that the stock 
+is more volatile than the market hence a 1% change in the market will result in a
+1.5699987% to AMD stock. AMD is 56.99987% more volatile than the standard and poors
+and thus the market.
+
+Since AMD stock is more volatile, investing in AMD is riskier however it can also 
+perform better in the situation where the market performs well. Risk seeking investors
+may choose to invest in the stock whilst risk averse investors may instead choose to
+invest in stocks with a beta value closer to 1 or below 1.
+
+#### Plotting the CAPM Line
+Plot the scatter plot of AMD vs. S&P 500 excess returns and add the CAPM regression line.
+
+```{r plot}
+#fill the code
+ggplot(df, aes(x = GSPC_Excess_Return, y = AMD_Excess_Return)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "purple") +
+  labs(title = "CAPM Analysis", x = "S&P 500 Excess Return", y = "AMD Excess Return")
+```
+
+### Step 3: Predictions Interval
+Suppose the current risk-free rate is 5.0%, and the annual expected return for the S&P 500 is 13.3%. Determine a 90% prediction interval for AMD's annual expected return.
+
+*Hint: Calculate the daily standard error of the forecast ($s_f$), and assume that the annual standard error for prediction is $s_f \times \sqrt{252}$. Use the simple return average method to convert daily stock returns to annual returns if needed.*
+
+
+**Answer:**
+
+```{r pi}
+#fill the code
+
+# Extracting the residual standard error of the summary
+s_f <- summary(capm)$sigma
+
+# Calculating annual standard error using S_F * sqrt(252)
+annual_s_f <- s_f * sqrt(252)
+
+# using a risk free rate of 5%
+current_rf_rate <- 0.05 # given value of 5%
+#using annual_expected_market_return value of 13.3%
+annual_expected_market_return <- 0.133 # given value of 13.3%
+
+# Calculating the expected annual excess return for AMD
+expected_annual_excess_return <- beta * (annual_expected_market_return - current_rf_rate)
+
+# Calculating the predicted annual return for AMD
+predicted_annual_return <- current_rf_rate + expected_annual_excess_return
+
+# Calculating the 90% prediction interval with given degrees of freedom and confidence
+t_value <- qt(0.95, df = nrow(df) - 2) 
+lower_bound <- predicted_annual_return - t_value * annual_s_f
+upper_bound <- predicted_annual_return + t_value * annual_s_f
+
+prediction_interval <- paste(
+  "The 90% Prediction Interval for AMD's Annual Expected Return is:\n",
+  "Lower Bound: ", lower_bound, "\n",
+  "Upper Bound: ", upper_bound, "\n"
+)
+cat(prediction_interval)
+```
+
